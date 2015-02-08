@@ -1,46 +1,15 @@
 var http = require("http"),
     url = require("url"),
-    path = require("path"),
-    fs = require("fs"),
+    util = require("util"),
     AWS = require("aws-sdk"),
     dns = require("dns"),
     Q = require("q"),
     Marathon = require("./lib/marathon.js"),
-    debug = require("debug")("dns"),
-    port = process.argv[2] || 8888;
+    utils = require("./lib/utils.js"),
+    debug = require("debug")("dns");
 
 debug.marathon = require("debug")("dns:marathon");
 debug.route53 = require("debug")("dns:route53");
-
-/*http.createServer(function(request, response) {
-
-  var uri = url.parse(request.url).pathname
-    , filename = path.join(process.cwd(), uri);
-
-  path.exists(filename, function(exists) {
-    if(!exists) {
-      response.writeHead(404, {"Content-Type": "text/plain"});
-      response.write("404 Not Found\n");
-      response.end();
-      return;
-    }
-
-    if (fs.statSync(filename).isDirectory()) filename += '/index.html';
-
-    fs.readFile(filename, "binary", function(err, file) {
-      if(err) {        
-        response.writeHead(500, {"Content-Type": "text/plain"});
-        response.write(err + "\n");
-        response.end();
-        return;
-      }
-
-      response.writeHead(200);
-      response.write(file, "binary");
-      response.end();
-    });
-  });
-}).listen(parseInt(port, 10));*/
 
 // Connect to AWS
 AWS.config.region = 'eu-west-1';
@@ -53,8 +22,11 @@ AWS.config.credentials = {
 var route53  = new AWS.Route53();
 var marathon = new Marathon({base_url: process.env.MARATHON_HOST});
 
+// State of the previous update
+var state = null;
+
 // Start the polling timer 
-setTimeout(function(){
+setInterval(function(){
 
 	marathon.apps.list().then(function(res) {
 		// Get the apps and filter them out by 'DNS' environment variable
@@ -113,7 +85,7 @@ setTimeout(function(){
 		host: "api.misakai.com"
 	}])*/
 
-}, 1000);
+}, 10000);
 
 
 // Update route53
@@ -146,11 +118,13 @@ function update(records){
 					if(typeof groupByZone[zone] === 'undefined'){
 						groupByZone[zone] = {
 							id: hostedZone.Id,
-							changes: []
+							rec: [],
+							del: []
 						}
 					}
 
-					groupByZone[zone].changes.push({
+					delete data.table[name]['resolve'];
+					groupByZone[zone].rec.push({
 						name: name,
 						records: data.table[name]
 					});
@@ -158,6 +132,18 @@ function update(records){
 				}
 			}
 		}
+
+		// make sure the data is comparable
+		groupByZone = utils.clone(groupByZone);
+
+		// Do we have any changes?
+		if(JSON.stringify(state) == JSON.stringify(groupByZone)){
+			debug('no changes detected');
+			return;
+		}
+
+		// Compare current and previous states, modifying it
+		groupByZone = compareState(utils.clone(state), utils.clone(groupByZone));
 
 		// Update the records
 		for(var zoneName in groupByZone){
@@ -176,21 +162,85 @@ function update(records){
 	});
 }
 
+// Compare current and previous states, modifying it
+function compareState(previous, current){
+	state = utils.clone(current);
+	if(previous == null)
+		return current;
+
+	// test:
+	//previous = current;
+	//current = new Object();
+
+	// Check if we have hosted zone deletions
+	for(var zone in previous){
+		if(typeof current[zone] === 'undefined'){
+			debug('delete: ' + zone);
+			current[zone] = {
+				id: utils.clone(previous[zone].id),
+				rec: [],
+				del: utils.clone(previous[zone].rec)
+			}
+		}
+	}
+
+	for(var zone in previous){
+		var pZone = previous[zone];
+		var cZone = current[zone];
+
+		// Do we have any changes?
+		if(JSON.stringify(pZone) == JSON.stringify(cZone)){
+			// No actual changes, remove from the current
+			debug('no changes for ' + zone);
+			delete current[zone];
+		}
+
+		// Already done
+		if(cZone.rec.length == 0)
+			continue;
+
+		// Detect changes
+		for(var i=0; i<pZone.rec.length;++i){
+			var pName = pZone.rec[i].name;
+			var match = false;
+			for(var j=0; j<cZone.rec.length;++j){
+				var cName = cZone.rec[j].name;
+				if(cName == pName){
+					// We still have the subdomain
+					match = true;
+					break;	
+				} 
+			}
+
+			// If we didn't find a match, we have to delete it
+			if(!match){
+				debug('delete: ' + pName);
+				current[zone].del.push(pZone.rec[i]);
+			}
+		}
+		
+	}
+
+	debug(current);
+	return current;
+}
+
 // Updates a single hosted zone 
 function updateRecords(zone){
 	var q = Q.defer();
+	var changes = [];
 
 	// Create the list of records
-	var changes = [];
-	zone.changes.forEach(function(change){
+	zone.rec.forEach(function(change){
 		var recordSet = [];
-		change.records.addr.forEach(function(addr){
+		var addresses = utils.distinct(change.records.addr);
+		addresses.forEach(function(addr){
 			recordSet.push({
 				Value: addr
 			})
 		});
 
-		
+		debug.route53('changing ' + change.name + " to " +addresses);
 		changes.push({
 			Action: 'UPSERT',
 			ResourceRecordSet: {
@@ -200,7 +250,28 @@ function updateRecords(zone){
 				TTL: 300
 			}
 		});
+	});
 
+	// Create the list of deletions
+	zone.del.forEach(function(deletion){
+		var recordSet = [];
+		var addresses = utils.distinct(deletion.records.addr);
+		addresses.forEach(function(addr){
+			recordSet.push({
+				Value: addr
+			})
+		});
+
+		debug.route53('deleting ' + deletion.name);
+		changes.push({
+			Action: 'DELETE',
+			ResourceRecordSet: {
+				Name: deletion.name, 
+				Type: 'A',
+				ResourceRecords: [{ Value: '' }],
+				TTL: 300
+			}
+		});
 	});
 
 	// Prepare the request
@@ -212,10 +283,11 @@ function updateRecords(zone){
 	};
 
 	// Send the request
-	/*route53.changeResourceRecordSets(request, function(err, data) {
+	debug.route53('pushing changes to route53: ' + zone.id);
+	route53.changeResourceRecordSets(request, function(err, data) {
 		if(err) return q.reject(err);
 		return q.resolve()
-	});*/
+	});
 
 	return q.promise;
 }
@@ -239,7 +311,7 @@ function buildTable(records){
 			};
 
 		// Push resolve functions
-		table[record.name].resolve.push(ipv4(record.host));	
+		table[record.name].resolve.push(utils.ipv4(record.host));	
 	});
 
 	// Resolve each record
@@ -280,33 +352,10 @@ function buildTable(records){
 	});
 }
 
-// Retrieves & validates an IPv4 value
-function ipv4(value) {
-	if (/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(value)){
-		return Q.fcall(function(){ return [value]});
-	}
-	
-	return Q.fcall(function(){ 
-		var q = Q.defer();
-		dns.resolve4(value, function (err, addresses) {
-			if (err){ q.reject(err); }
-			return q.resolve(addresses);
-		});
-		return q.promise;
-	});
-}
-
-// Mixin unique/distinct
-Array.prototype.distinct = function(){
-   var u = {}, a = [];
-   for(var i = 0, l = this.length; i < l; ++i){
-      if(u.hasOwnProperty(this[i])) {
-         continue;
-      }
-      a.push(this[i]);
-      u[this[i]] = 1;
-   }
-   return a;
-}
-
-console.log("Static file server running at\n  => http://localhost:" + port + "/\nCTRL + C to shutdown");
+// Start the server
+/*http.createServer(function (req, res) {  
+  res.writeHead(200, {'Content-Type': 'text/plain'});
+  res.write('Misakai.Dns Server')
+  res.end();
+}).listen(8053);
+*/

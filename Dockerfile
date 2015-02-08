@@ -9,6 +9,6 @@ WORKDIR /app
 #RUN npm install
 
 # Http Port
-# EXPOSE 80
+EXPOSE 8053
 
 CMD ["/usr/bin/node", "/app/dns.js"]
