@@ -9,4 +9,4 @@ RUN npm install
 # Http Port
 EXPOSE 80
 
-CMD ["node", "/app/dns.js"]
+CMD ["/usr/bin/node", "/app/dns.js"]
