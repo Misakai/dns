@@ -4,9 +4,11 @@ MAINTAINER Roman Atachiants "roman@misakai.com"
 # Extract & Install
 COPY . /app
 WORKDIR /app
-RUN npm install
+
+# since we are using nano image, we can't run npm
+#RUN npm install
 
 # Http Port
-EXPOSE 80
+# EXPOSE 80
 
 CMD ["/usr/bin/node", "/app/dns.js"]
