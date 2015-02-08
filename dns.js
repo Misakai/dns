@@ -143,11 +143,12 @@ function update(records){
 		}
 
 		// Compare current and previous states, modifying it
-		groupByZone = compareState(utils.clone(state), utils.clone(groupByZone));
+		var current = utils.diff(utils.clone(state), utils.clone(groupByZone));
+		state = utils.clone(groupByZone);
 
 		// Update the records
-		for(var zoneName in groupByZone){
-			var zone = groupByZone[zoneName];
+		for(var zoneName in current){
+			var zone = current[zoneName];
 			updateRecords(zone).then(function(){
 				debug.route53('updated ' + zoneName);
 			})
@@ -162,68 +163,6 @@ function update(records){
 	});
 }
 
-// Compare current and previous states, modifying it
-function compareState(previous, current){
-	state = utils.clone(current);
-	if(previous == null)
-		return current;
-
-	// test:
-	//previous = current;
-	//current = new Object();
-
-	// Check if we have hosted zone deletions
-	for(var zone in previous){
-		if(typeof current[zone] === 'undefined'){
-			debug('delete: ' + zone);
-			current[zone] = {
-				id: utils.clone(previous[zone].id),
-				rec: [],
-				del: utils.clone(previous[zone].rec)
-			}
-		}
-	}
-
-	for(var zone in previous){
-		var pZone = previous[zone];
-		var cZone = current[zone];
-
-		// Do we have any changes?
-		if(JSON.stringify(pZone) == JSON.stringify(cZone)){
-			// No actual changes, remove from the current
-			debug('no changes for ' + zone);
-			delete current[zone];
-		}
-
-		// Already done
-		if(cZone.rec.length == 0)
-			continue;
-
-		// Detect changes
-		for(var i=0; i<pZone.rec.length;++i){
-			var pName = pZone.rec[i].name;
-			var match = false;
-			for(var j=0; j<cZone.rec.length;++j){
-				var cName = cZone.rec[j].name;
-				if(cName == pName){
-					// We still have the subdomain
-					match = true;
-					break;	
-				} 
-			}
-
-			// If we didn't find a match, we have to delete it
-			if(!match){
-				debug('delete: ' + pName);
-				current[zone].del.push(pZone.rec[i]);
-			}
-		}
-		
-	}
-
-	debug(current);
-	return current;
-}
 
 // Updates a single hosted zone 
 function updateRecords(zone){
@@ -268,7 +207,7 @@ function updateRecords(zone){
 			ResourceRecordSet: {
 				Name: deletion.name, 
 				Type: 'A',
-				ResourceRecords: [{ Value: '' }],
+				ResourceRecords: recordSet,
 				TTL: 300
 			}
 		});
@@ -285,7 +224,10 @@ function updateRecords(zone){
 	// Send the request
 	debug.route53('pushing changes to route53: ' + zone.id);
 	route53.changeResourceRecordSets(request, function(err, data) {
-		if(err) return q.reject(err);
+		if(err) return {
+			debug.route53(err);
+			q.reject(err);
+		}
 		return q.resolve()
 	});
 
