@@ -72,20 +72,7 @@ setInterval(function(){
 		debug(err);
 	});
 
-	
-
-	/*update([{ 
-		name: "test.misakai.com",
-		host: "127.0.0.1"
-	}, { 
-		name: "http://test.misakai.com",
-		host: "api.misakai.com"
-	}, { 
-		name: "some.service.here.misakai.com",
-		host: "api.misakai.com"
-	}])*/
-
-}, 10000);
+}, 15000);
 
 
 // Update route53
@@ -149,24 +136,61 @@ function update(records){
 			}
 		}
 
-		// make sure the data is comparable
-		groupByZone = utils.clone(groupByZone);
+		// create also public records
+		var qPubRec = [];
+		for(var zoneName in groupByZone){
+			var zone = groupByZone[zoneName];
 
-		// Compare current and previous states, modifying it
-		var current = utils.diff(utils.clone(state), utils.clone(groupByZone));
-		state = utils.clone(groupByZone);
+			// for each subdomain
+			zone.rec.forEach(function(r){
+				var qAddr = [];
+				var vAddr = [];
+				var q = Q.defer();
+				qPubRec.push(q.promise);
+				r.records.addr.forEach(function(addr){
+					
+					qAddr.push(utils.beacon(addr).then(function(b){
+						vAddr.push(JSON.parse(b).public)
+					}).fail(function(err){
+						debug(err);
+					}));
+				});
 
-		// Update the records
-		for(var zoneName in current){
-			var zone = current[zoneName];
-			updateRecords(zone).then(function(){
-				debug.route53('updated ' + zoneName);
-			})
-			.fail(function(err){
-				debug.route53(err);
+				// When we have the vAddr populated
+				Q.allSettled(qAddr).then(function(){
+					var pub = utils.clone(r);
+					pub.name = 'pub.' + pub.name;
+					pub.records.name = pub.name;
+					pub.records.addr = vAddr;
+					groupByZone[zoneName].rec.push(pub);
+					q.resolve();
+				});
 			});
 		}
-		
+
+		// Wait for every ip resolved
+		Q.allSettled(qPubRec).then(function(){
+			// make sure the data is comparable
+			groupByZone = utils.clone(groupByZone);
+
+			// Compare current and previous states, modifying it
+			var current = utils.diff(utils.clone(state), utils.clone(groupByZone));
+			state = utils.clone(groupByZone);
+
+			// Update the records
+			for(var zoneName in current){
+				var zone = current[zoneName];
+				updateRecords(zone).then(function(){
+					debug.route53('updated ' + zoneName);
+				})
+				.fail(function(err){
+					debug.route53(err);
+				});
+			}
+		})
+		.fail(function(err){
+			debug.route53(err);
+		})
 	})
 	.fail(function(err){
 		debug.route53(err);
@@ -298,6 +322,7 @@ function buildTable(records){
 				}
 			}
 		}
+
 		return table;
 	}).fail(function(err){
 		debug(err);
