@@ -30,7 +30,7 @@ setInterval(function(){
 
 	marathon.apps.list().then(function(res) {
 		// Get the apps and filter them out by 'DNS' environment variable
-		debug.marathon('querying marathon applications');
+		debug.marathon('querying marathon');
 		var targets = [];
 		res.apps.forEach(function(app){
 			if(typeof app.env['DNS'] != 'undefined')
@@ -43,7 +43,7 @@ setInterval(function(){
 	})
 	.then(function(apps){
 		var q = Q.defer()
-		debug.marathon('querying marathon tasks');
+		//debug.marathon('querying marathon tasks');
 		marathon.tasks.list().then(function(res){
 			var records = [];
 			res.tasks.forEach(function(task){
@@ -52,7 +52,7 @@ setInterval(function(){
 					if(app.id != task.appId)
 						continue;
 
-					debug.marathon('creating record: ' + app.dns + '@' + task.host);
+					//debug.marathon('creating record: ' + app.dns + '@' + task.host);
 					records.push({
 						name: app.dns,
 						host: task.host
@@ -65,7 +65,6 @@ setInterval(function(){
 		return q.promise;
 	})
 	.then(function(records){
-		debug('updating route53');
 		update(records);
 	})
 	.fail(function(err){
@@ -94,7 +93,7 @@ function update(records){
 	buildTable(records).then(function(t){
 		// Retrieve the hosted zones
 		var q = Q.defer();
-		debug('retrieving route53 hosted zones');
+		debug.route53('retrieving route53 hosted zones');
 		route53.listHostedZones({}, function(err, data){
 			if (err) return q.reject(err);
 			return q.resolve({table: t, zones: data});
@@ -132,9 +131,6 @@ function update(records){
 				}
 			}
 		}
-
-		// Make sure utils is defined
-		utils = require("./lib/utils.js");
 
 		// make sure the data is comparable
 		groupByZone = utils.clone(groupByZone);
@@ -225,7 +221,7 @@ function updateRecords(zone){
 	};
 
 	// Send the request
-	debug.route53('pushing changes to route53: ' + zone.id);
+	debug.route53('changing resource record sets: ' + zone.id);
 	route53.changeResourceRecordSets(request, function(err, data) {
 		if(err) {
 			debug.route53(err);
