@@ -224,9 +224,9 @@ function updateRecords(zone){
 	// Send the request
 	debug.route53('pushing changes to route53: ' + zone.id);
 	route53.changeResourceRecordSets(request, function(err, data) {
-		if(err) return {
+		if(err) {
 			debug.route53(err);
-			q.reject(err);
+			return q.reject(err);
 		}
 		return q.resolve()
 	});
