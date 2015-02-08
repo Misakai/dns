@@ -133,6 +133,9 @@ function update(records){
 			}
 		}
 
+		// Make sure utils is defined
+		utils = require("./lib/utils.js");
+
 		// make sure the data is comparable
 		groupByZone = utils.clone(groupByZone);
 
