@@ -305,9 +305,8 @@ function buildTable(records){
 }
 
 // Start the server
-/*http.createServer(function (req, res) {  
+http.createServer(function (req, res) {  
   res.writeHead(200, {'Content-Type': 'text/plain'});
-  res.write('Misakai.Dns Server')
+  res.write('Misakai.Dns')
   res.end();
 }).listen(8053);
-*/
