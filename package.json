@@ -1,0 +1,16 @@
+{
+    "name": "dns"
+  , "version": "0.0.1"
+  , "private": true
+  , "dependencies": {
+      "aws-sdk": ">= 2.x.x",
+      "q":  ">= 1.x.x",
+      "debug": ">= 1.x.x",
+      "rest.node": "0.4.x"
+  }
+  , "engine": {
+    "node": ">= 0.6.x"
+  }
+  , "bin": { "dns": "dns.js" }
+  , "main": "dns.js"
+}
