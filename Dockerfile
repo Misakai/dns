@@ -1,4 +1,4 @@
-FROM nano/nodejs
+FROM nano/node.js
 MAINTAINER Roman Atachiants "roman@misakai.com"
 
 # Extract & Install
