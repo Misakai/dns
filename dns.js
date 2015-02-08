@@ -24,6 +24,7 @@ var marathon = new Marathon({base_url: process.env.MARATHON_HOST});
 
 // State of the previous update
 var state = null;
+var stateTable = null;
 
 // Start the polling timer 
 setInterval(function(){
@@ -91,6 +92,17 @@ setInterval(function(){
 function update(records){
 	// Add the IP Addresses to the table
 	buildTable(records).then(function(t){
+		// Quick comparison of the tables to avoid additional calls to Route53
+		var t0 = stateTable;
+		var t1 = utils.clone(t);
+		stateTable = t1;
+
+		// Compare now
+		if(JSON.stringify(t0) == JSON.stringify(t1)){
+			debug('no changes detected');
+			return;
+		}
+
 		// Retrieve the hosted zones
 		var q = Q.defer();
 		debug.route53('retrieving route53 hosted zones');
@@ -100,6 +112,11 @@ function update(records){
 		});
 		return q.promise;
 	}).then(function(data){
+		// We must have a data to proceed
+		if(typeof data === 'undefined' || data == null)
+			return;
+
+		// Group by zone for Route53
 		var groupByZone = {};
 		for(var name in data.table){
 			var hname = name.split('.')
@@ -134,12 +151,6 @@ function update(records){
 
 		// make sure the data is comparable
 		groupByZone = utils.clone(groupByZone);
-
-		// Do we have any changes?
-		if(JSON.stringify(state) == JSON.stringify(groupByZone)){
-			debug('no changes detected');
-			return;
-		}
 
 		// Compare current and previous states, modifying it
 		var current = utils.diff(utils.clone(state), utils.clone(groupByZone));
@@ -236,7 +247,7 @@ function updateRecords(zone){
 // Build a dns table from the records provided
 function buildTable(records){	
 	var table = {};
-	debug('building dns table');
+	//debug('building dns table');
 
 	// Create the records in the table
 	records.forEach(function(record){
@@ -270,7 +281,7 @@ function buildTable(records){
 				var request = requests[i];
 				if(request.isFulfilled()){
 					var value = request.inspect().value;
-					debug('node ipv4 for ' + name + ' = ' + value);
+					debug(name + ' => ' + value);
 					value.forEach(function(addr){
 						// If we have an array, iterate through
 						if( Object.prototype.toString.call( addr ) === '[object Array]' ) {
