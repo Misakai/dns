@@ -12,9 +12,9 @@ debug.marathon = require("debug")("dns:marathon");
 debug.route53 = require("debug")("dns:route53");
 
 // Connect to AWS
-AWS.config.region = 'eu-west-1';
+AWS.config.region = process.env.AWS_REGION;
 AWS.config.credentials = {
-	accessKeyId: process.env.AWS_ACCESS_KEY, 
+	accessKeyId: process.env.AWS_ACCESS_KEY,
 	secretAccessKey: process.env.AWS_SECRET_KEY
 };
 

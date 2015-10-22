@@ -26,7 +26,8 @@ In order to deploy **Misakai.Dns** into your cluster, submit a Marathon app with
     "MARATHON_HOST": "http://127.0.0.1",
     "MARATHON_AUTH": "username:password",
     "AWS_ACCESS_KEY": "XXX",
-    "AWS_SECRET_KEY": "XXX"
+    "AWS_SECRET_KEY": "XXX",
+    "AWS_REGION": "eu-west-1"
   },
   "healthChecks": [{
       "protocol": "HTTP",
@@ -45,7 +46,7 @@ In order to deploy **Misakai.Dns** into your cluster, submit a Marathon app with
 The parameters:
 * **MARATHON_HOST**: the URL of marathon REST API 
 * **MARATHON_AUTH**: the optional username:password combination for marathon REST API
-* **AWS_ACCESS_KEY, AWS_SECRET_KEY**: AWS Access & Secret Key. This only requires Route53 access.
+* **AWS_ACCESS_KEY, AWS_SECRET_KEY**, **AWS_REGION**: AWS Access, Secret Key, and Region. This only requires Route53 access.
 * **DNS**: optional hostname to register itself into
 
 # Using Misakai.DNS

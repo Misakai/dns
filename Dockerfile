@@ -10,5 +10,6 @@ WORKDIR /app
 
 # Http Port
 EXPOSE 8053
+ENV AWS_REGION eu-west-1
 
 CMD ["/usr/bin/node", "/app/dns.js"]
